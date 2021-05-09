@@ -28,17 +28,19 @@ def make_constraints(sent, vocab):
     for token in sent:
         if token != vocab.pad_id:
             constraints[token] += 1
-    constraints[vocab.eos_id] = 1
     return constraints
 
 class AnteScoredSentence(ScoredSentence):
-    def __init__(self, log_probs, sent, constraints, vocab_size):
+    def __init__(self, log_probs, sent, constraints, vocab):
         super().__init__(log_probs, sent)
-        self.vocab_size = vocab_size
+        self.vocab = vocab
         self.constraints = constraints
 
     def constrain(self, score):
-        for i in range(self.vocab_size):
+        if all(x == 0 for x in self.constraints):
+            self.constraints[self.vocab.eos_id] = 1
+
+        for i in range(len(self.vocab)):
             if self.constraints[i] == 0:
                 score[i] = - float('inf')
         return score
@@ -48,7 +50,7 @@ class AnteScoredSentence(ScoredSentence):
         sent = self.sent + [token]
         constraints = self.constraints[:]
         constraints[token] -= 1
-        return AnteScoredSentence(log_probs, sent, constraints, self.vocab_size)
+        return AnteScoredSentence(log_probs, sent, constraints, self.vocab)
 
 def predict(model, vocab, mem, beam):
     decoder_inputs = [torch.tensor([vocab.eos_id] + sent.sent) for sent in beam]
@@ -93,7 +95,7 @@ def beam_search(model, vocab, width, input_sentence, max_len = 128):
     model.eval()
     mem = encode(model, vocab, input_sentence)
     beam = [AnteScoredSentence(log_probs = [], sent = [vocab.eos_id],
-        constraints = make_constraints(input_sentence, vocab), vocab_size = len(vocab))]
+        constraints = make_constraints(input_sentence, vocab), vocab = vocab)]
     output = []
     for i in range(max_len):
         if len(beam) == 0:
